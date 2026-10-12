@@ -8,6 +8,9 @@ import {
   DEFAULT_MODE,
   DEFAULT_PRESET_NAME,
   PRESETS,
+  Preset,
+  looksLikeSizeSpec,
+  parseCustomSizes,
 } from "./presets";
 import { getImageFiles, getFileName } from "./file-utils";
 import { resizeImage, ResizeMode } from "./image";
@@ -23,7 +26,13 @@ program
   .option("-o, --output <dir>", "Output directory (default: ./output)")
   .option(
     "-p, --preset <name>",
-    `Preset: ${Object.keys(PRESETS).join(", ")} (default: ${DEFAULT_PRESET_NAME})`
+    `Preset: ${Object.keys(PRESETS).join(", ")}, or a size like 1206x2622 (default: ${DEFAULT_PRESET_NAME})`
+  )
+  .option(
+    "-s, --size <size>",
+    'Custom size "WIDTHxHEIGHT" or "name:WIDTHxHEIGHT". Repeatable and comma-separated. Overrides --preset.',
+    (value: string, previous: string[] = []) => previous.concat(value),
+    [] as string[]
   )
   .option(
     "-m, --mode <mode>",
@@ -40,6 +49,7 @@ program
       const inputDir = inputArg || options.input || "./screenshots";
       const outputDir = options.output || "./output";
       const presetName = options.preset || DEFAULT_PRESET_NAME;
+      const sizeSpecs: string[] = options.size || [];
       const mode: ResizeMode = (options.mode || DEFAULT_MODE) as ResizeMode;
       const isDryRun = options.dryRun || false;
       const forceFormat = options.format ? options.format.toLowerCase() : "png";
@@ -51,12 +61,32 @@ program
         process.exit(1);
       }
 
-      if (!PRESETS[presetName]) {
+      // Custom sizes take priority, then a preset name, then dimensions passed
+      // through --preset as a convenience.
+      let customPresets: Preset[] | null = null;
+
+      if (sizeSpecs.length > 0) {
+        try {
+          customPresets = parseCustomSizes(sizeSpecs);
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
+      } else if (!PRESETS[presetName] && looksLikeSizeSpec(presetName)) {
+        try {
+          customPresets = parseCustomSizes([presetName]);
+        } catch (err) {
+          console.error(`Error: ${(err as Error).message}`);
+          process.exit(1);
+        }
+      } else if (!PRESETS[presetName]) {
         console.error(
-          `Error: Unknown preset "${presetName}". Available: ${Object.keys(PRESETS).join(", ")}`
+          `Error: Unknown preset "${presetName}". Available: ${Object.keys(PRESETS).join(", ")}. You can also pass a size like 1206x2622.`
         );
         process.exit(1);
       }
+
+      const isCustom = customPresets !== null;
 
       if (!["fill", "fit", "fit-blur", "fit-edge"].includes(mode)) {
         console.error(
@@ -77,12 +107,22 @@ program
         return;
       }
 
+      const presets = customPresets ?? PRESETS[presetName];
+
       console.log(`Found ${imageFiles.length} image(s)`);
-      console.log(`Preset: ${presetName}`);
+      console.log(
+        isCustom
+          ? `Sizes: ${presets.map((preset) => `${preset.width}x${preset.height}`).join(", ")}`
+          : `Preset: ${presetName}`
+      );
       console.log(`Mode: ${mode}`);
       console.log(`Format: ${forceFormat}`);
 
-      if (APPSTORE_PRESET_NAMES.has(presetName) && mode === "fit") {
+      if (
+        !isCustom &&
+        APPSTORE_PRESET_NAMES.has(presetName) &&
+        mode === "fit"
+      ) {
         console.warn(
           "Warning: fit mode preserves borders with a solid background. Use fit-edge if you need padding without white bars or blur."
         );
@@ -92,18 +132,20 @@ program
         console.log("DRY RUN MODE - No files will be saved\n");
       }
 
-
-      const presets = PRESETS[presetName];
       let processedCount = 0;
 
       // Process each image
       for (const imagePath of imageFiles) {
         const fileName = getFileName(imagePath);
-        const imageMetadata = await resizeImageMetadata(imagePath);
-        const isLandscapeSource = imageMetadata.width > imageMetadata.height;
-        const selectedPresets = APPSTORE_PRESET_NAMES.has(presetName)
-          ? presets.filter((preset) => (preset.width > preset.height) === isLandscapeSource)
-          : presets;
+        // Custom sizes are explicit, so orientation filtering is skipped.
+        let selectedPresets = presets;
+        if (!isCustom && APPSTORE_PRESET_NAMES.has(presetName)) {
+          const imageMetadata = await resizeImageMetadata(imagePath);
+          const isLandscapeSource = imageMetadata.width > imageMetadata.height;
+          selectedPresets = presets.filter(
+            (preset) => preset.width > preset.height === isLandscapeSource
+          );
+        }
 
         // Mirror folder structure from input
         const relativeDir = path.relative(inputDir, path.dirname(imagePath));

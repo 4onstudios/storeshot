@@ -37,11 +37,45 @@ storeshot [options]
 | ---------------------- | ----- | ----------------------------------------------------- | --------------- |
 | `--input <dir>`        | `-i`  | Input directory containing images                     | `./screenshots` |
 | `--output <dir>`       | `-o`  | Output directory for generated screenshots            | `./output`      |
-| `--preset <name>`      | `-p`  | Preset to use                                         | `appstore_all`  |
+| `--preset <name>`      | `-p`  | Preset name, or a size like `1206x2622`               | `appstore_all`  |
+| `--size <size>`        | `-s`  | Custom size, repeatable. Overrides `--preset`         | -               |
 | `--mode <mode>`        | `-m`  | Resize mode: `fill`, `fit`, `fit-blur`, or `fit-edge` | `fill`          |
 | `--format <format>`    | `-f`  | Output format: `png` or `jpg`                         | `png`           |
 | `--background <color>` | `-b`  | Background for `fit` mode and alpha flattening        | `#ffffff`       |
 | `--dry-run`            | -     | Preview without saving files                          | `false`         |
+
+## Custom Sizes
+
+Use `--size` when you need dimensions that no built-in preset covers, such as a
+newly supported App Store Connect size.
+
+```bash
+# Single custom size
+storeshot -i ./screenshots -s 1206x2622
+
+# Multiple sizes, repeated flag
+storeshot -i ./screenshots -s 1206x2622 -s 2622x1206
+
+# Multiple sizes, comma-separated
+storeshot -i ./screenshots -s 1206x2622,1290x2796
+
+# Named size, used in the output filename
+storeshot -i ./screenshots -s iphone_6_9:1206x2622
+```
+
+`--preset` also accepts a raw size as a shorthand:
+
+```bash
+storeshot -i ./screenshots -p 1206x2622
+```
+
+Notes:
+
+- Custom sizes are used exactly as given, so orientation filtering is skipped.
+  Pass both orientations explicitly if you need them.
+- Unnamed sizes use `custom` as the filename label, so `1206x2622` produces
+  `home_custom_1206x2622.png`.
+- Duplicate sizes are de-duplicated.
 
 ## App Store Presets
 
@@ -181,6 +215,9 @@ storeshot -i ./screenshots -p paywall -m fit -o ./paywall_assets
 
 # JPEG output when needed
 storeshot -i ./screenshots -p appstore_ready -f jpg
+
+# Custom App Store size not covered by a built-in preset
+storeshot -i ./screenshots -s 1206x2622 -f jpg -o ./appstore_output
 ```
 
 ## Dev & Build
